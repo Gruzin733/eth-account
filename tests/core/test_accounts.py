@@ -1,9 +1,17 @@
 # coding=utf-8
 
+from hypothesis import (
+    given,
+    strategies as st,
+)
+import os
 import pytest
 
 from cytoolz import (
     dissoc,
+)
+from eth_keyfile.keyfile import (
+    get_default_work_factor_for_kdf,
 )
 from eth_keys import (
     keys,
@@ -23,6 +31,8 @@ from eth_account import (
 )
 from eth_account.messages import (
     defunct_hash_message,
+    encode_defunct,
+    encode_intended_validator,
 )
 
 # from https://github.com/ethereum/tests/blob/3930ca3a9a377107d5792b3e7202f79c688f1a67/BasicTests/txtest.json # noqa: 501
@@ -50,7 +60,90 @@ ETH_TEST_TRANSACTIONS = [
         "data": "6025515b525b600a37f260003556601b596020356000355760015b525b54602052f260255860005b525b54602052f2",  # noqa: 501
         "unsigned": "f83f8085e8d4a510008227108080af6025515b525b600a37f260003556601b596020356000355760015b525b54602052f260255860005b525b54602052f2808080",  # noqa: 501
         "signed": "f87f8085e8d4a510008227108080af6025515b525b600a37f260003556601b596020356000355760015b525b54602052f260255860005b525b54602052f21ba05afed0244d0da90b67cf8979b0f246432a5112c0d31e8d5eedd2bc17b171c694a0bb1035c834677c2e1185b8dc90ca6d1fa585ab3d7ef23707e1a497a98e752d1b"  # noqa: 501
-    }
+    },
+    {
+        "chainId": None,
+        "key": "c85ef7d79691fe79573b1a7064c19c1a9819ebdbd1faaab1a8ec92344438aaf4",
+        "nonce": 0,
+        "gasPrice": 1000000000000,
+        "gas": 10000,
+        "to": HexBytes("0x13978aee95f38490e9769C39B2773Ed763d9cd5F"),
+        "value": 10000000000000000,
+        "data": "",
+        "unsigned": "eb8085e8d4a510008227109413978aee95f38490e9769c39b2773ed763d9cd5f872386f26fc1000080808080",  # noqa: 501
+        "signed": "f86b8085e8d4a510008227109413978aee95f38490e9769c39b2773ed763d9cd5f872386f26fc10000801ba0eab47c1a49bf2fe5d40e01d313900e19ca485867d462fe06e139e3a536c6d4f4a014a569d327dcda4b29f74f93c0e9729d2f49ad726e703f9cd90dbb0fbf6649f1"  # noqa: 501
+    },
+    # Typed Transaction (EIP-2930's access list transaction) - empty list.
+    {
+        "key": "fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d5817ac83d38b6a19",
+        "gas": "0x186a0",
+        "gasPrice": "0x3b9aca00",
+        "data": "0x616263646566",
+        "nonce": "0x27",
+        "to": "0x09616C3d61b3331fc4109a9E41a8BDB7d9776609",
+        "value": "0x5af3107a4000",
+        "type": "0x1",
+        "accessList": [],
+        "chainId": "0x76c",
+        "signed": "0x01f87482076c27843b9aca00830186a09409616c3d61b3331fc4109a9e41a8bdb7d9776609865af3107a400086616263646566c080a0bad1a40fa2d90dc7539831bb82dfccf9b7094eab238d50c4369b805fb7241c58a046ab7eb7ff8cdfd203847b7e1b2f9e41208bba76a86ae3eeb97fe2727763aa12", # noqa: 501
+    },
+    # Typed Transaction (EIP-2930's access list transaction) - non-empty list.
+    {
+        "key": "fad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d5817ac83d38b6a19",
+        "gas": "0x186a0",
+        "gasPrice": "0x3b9aca00",
+        "data": "0x616263646566",
+        "nonce": "0x22",
+        "to": "0x09616C3d61b3331fc4109a9E41a8BDB7d9776609",
+        "value": "0x5af3107a4000",
+        "type": "0x1",
+        "accessList": [
+            {
+                "address": "0x0000000000000000000000000000000000000001",
+                "storageKeys": [
+                    "0x0100000000000000000000000000000000000000000000000000000000000000"
+                ],
+            },
+        ],
+        "chainId": "0x76c",
+        "signed": "0x01f8ad82076c22843b9aca00830186a09409616c3d61b3331fc4109a9e41a8bdb7d9776609865af3107a400086616263646566f838f7940000000000000000000000000000000000000001e1a0010000000000000000000000000000000000000000000000000000000000000001a08289e85fa00f8f7f78a53cf147a87b2a7f0d27e64d7571f9d06a802e365c3430a017dc77eae36c88937db4a5179f57edc6119701652f3f1c6f194d1210d638a061",  # noqa: 501
+    },
+    # Typed Transaction (EIP-1559's dynamic fee transaction)
+    {
+        "key": "70af7ec25374c2b06cbfffeaf9817a3d1bc61854abbf39e9e00de734b0c0c8c4",
+        "gas": "0x186a0",
+        "maxFeePerGas": "0x77359400",
+        "maxPriorityFeePerGas": "0x77359400",
+        "data": "0x5544",
+        "nonce": "0x2",
+        "to": "0x96216849c49358B10257cb55b28eA603c874b05E",
+        "value": "0x5af3107a4000",
+        "type": "0x2",
+        "chainId": "0x539",
+        "signed": "0x02f8758205390284773594008477359400830186a09496216849c49358b10257cb55b28ea603c874b05e865af3107a4000825544c001a008badd022b23e5bb51a13a18c99185dbd24aac054f876a3cf89a61672e998b89a01d14fb34a688d516f6444fdb6ceca7778be786cc70d3fa29714b6f232f09a83a",  # noqa: 501
+    },
+    # Typed Transaction (EIP-1559's dynamic fee transaction) - integer values and access list
+    {
+        "key": "70af7ec25374c2b06cbfffeaf9817a3d1bc61854abbf39e9e00de734b0c0c8c4",
+        "gas": 100000,
+        "maxFeePerGas": 2000000000,
+        "maxPriorityFeePerGas": 1000000000,
+        "data": "0x5544",
+        "nonce": "0x2",
+        "to": "0x96216849c49358B10257cb55b28eA603c874b05E",
+        "value": "0x5af3107a4000",
+        "type": "0x2",
+        "accessList": [
+            {
+                "address": "0x0000000000000000000000000000000000000001",
+                "storageKeys": [
+                    "0x0100000000000000000000000000000000000000000000000000000000000000"
+                ],
+            },
+        ],
+        "chainId": "0x539",
+        "signed": "0x02f8ae82053902843b9aca008477359400830186a09496216849c49358b10257cb55b28ea603c874b05e865af3107a4000825544f838f7940000000000000000000000000000000000000001e1a0010000000000000000000000000000000000000000000000000000000000000001a036727d3bb8339377ac1d4c8b4d8c684a75d36047ebc369628be8d4d0f962d70ea064b1a8d2568bb9c44290242e8af47e1f428e2bf3073d9822a753649247321dfc",  # noqa: 501
+    },
 ]
 
 
@@ -77,24 +170,42 @@ def PRIVATE_KEY_ALT(request):
     return request.param
 
 
-@pytest.fixture
-def web3js_key():
-    return '0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318'
-
-
-@pytest.fixture
-def web3js_private_key(web3js_key):
-    return keys.PrivateKey(HexBytes(web3js_key))
-
-
-@pytest.fixture
-def web3js_password():
-    return 'test!'
-
-
-@pytest.fixture
+@pytest.fixture(params=['instance', 'class'])
 def acct(request):
-    return Account
+    if request.param == 'instance':
+        return Account()
+    elif request.param == 'class':
+        return Account
+    else:
+        raise Exception(f"account invocation {request.param} is not supported")
+
+
+@pytest.fixture(scope="module")
+def keyed_acct():
+    return Account.from_key(PRIVATE_KEY_AS_BYTES)
+
+
+@pytest.fixture(params=("text", "primitive", "hexstr"))
+def message_encodings(request):
+    if request == "text":
+        return {"text": "hello world"}
+    elif request == "primitive":
+        return {"primitive": b"hello world"}
+    else:
+        return {"hexstr": "68656c6c6f20776f726c64"}
+
+
+def test_eth_account_default_kdf(acct, monkeypatch):
+    assert os.getenv('ETH_ACCOUNT_KDF') is None
+    assert acct._default_kdf == 'scrypt'
+
+    monkeypatch.setenv('ETH_ACCOUNT_KDF', 'pbkdf2')
+    assert os.getenv('ETH_ACCOUNT_KDF') == 'pbkdf2'
+
+    import importlib
+    from eth_account import account
+    importlib.reload(account)
+    assert account.Account._default_kdf == 'pbkdf2'
 
 
 def test_eth_account_create_variation(acct):
@@ -104,61 +215,61 @@ def test_eth_account_create_variation(acct):
 
 
 def test_eth_account_equality(acct, PRIVATE_KEY):
-    acct1 = acct.privateKeyToAccount(PRIVATE_KEY)
-    acct2 = acct.privateKeyToAccount(PRIVATE_KEY)
+    acct1 = acct.from_key(PRIVATE_KEY)
+    acct2 = acct.from_key(PRIVATE_KEY)
     assert acct1 == acct2
 
 
-def test_eth_account_privateKeyToAccount_reproducible(acct, PRIVATE_KEY):
-    account1 = acct.privateKeyToAccount(PRIVATE_KEY)
-    account2 = acct.privateKeyToAccount(PRIVATE_KEY)
+def test_eth_account_from_key_reproducible(acct, PRIVATE_KEY):
+    account1 = acct.from_key(PRIVATE_KEY)
+    account2 = acct.from_key(PRIVATE_KEY)
     assert bytes(account1) == PRIVATE_KEY_AS_BYTES
     assert bytes(account1) == bytes(account2)
     assert isinstance(str(account1), str)
 
 
-def test_eth_account_privateKeyToAccount_diverge(acct, PRIVATE_KEY, PRIVATE_KEY_ALT):
-    account1 = acct.privateKeyToAccount(PRIVATE_KEY)
-    account2 = acct.privateKeyToAccount(PRIVATE_KEY_ALT)
+def test_eth_account_from_key_diverge(acct, PRIVATE_KEY, PRIVATE_KEY_ALT):
+    account1 = acct.from_key(PRIVATE_KEY)
+    account2 = acct.from_key(PRIVATE_KEY_ALT)
     assert bytes(account2) == PRIVATE_KEY_AS_BYTES_ALT
     assert bytes(account1) != bytes(account2)
 
 
-def test_eth_account_privateKeyToAccount_seed_restrictions(acct):
+def test_eth_account_from_key_seed_restrictions(acct):
     with pytest.raises(ValueError):
-        acct.privateKeyToAccount(b'')
+        acct.from_key(b'')
     with pytest.raises(ValueError):
-        acct.privateKeyToAccount(b'\xff' * 31)
+        acct.from_key(b'\xff' * 31)
     with pytest.raises(ValueError):
-        acct.privateKeyToAccount(b'\xff' * 33)
+        acct.from_key(b'\xff' * 33)
 
 
-def test_eth_account_privateKeyToAccount_properties(acct, PRIVATE_KEY):
-    account = acct.privateKeyToAccount(PRIVATE_KEY)
-    assert callable(account.signHash)
-    assert callable(account.signTransaction)
+def test_eth_account_from_key_properties(acct, PRIVATE_KEY):
+    account = acct.from_key(PRIVATE_KEY)
+    assert callable(account.sign_transaction)
+    assert callable(account.sign_message)
     assert is_checksum_address(account.address)
     assert account.address == ACCT_ADDRESS
-    assert account.privateKey == PRIVATE_KEY_AS_OBJ
+    assert account.key == PRIVATE_KEY_AS_OBJ
 
 
 def test_eth_account_create_properties(acct):
     account = acct.create()
-    assert callable(account.signHash)
-    assert callable(account.signTransaction)
+    assert callable(account.sign_transaction)
+    assert callable(account.sign_message)
     assert is_checksum_address(account.address)
-    assert isinstance(account.privateKey, bytes) and len(account.privateKey) == 32
+    assert isinstance(account.key, bytes) and len(account.key) == 32
 
 
 def test_eth_account_recover_transaction_example(acct):
     raw_tx_hex = '0xf8640d843b9aca00830e57e0945b2063246f2191f18f2675cedb8b28102e957458018025a00c753084e5a8290219324c1a3a86d4064ded2d15979b1ea790734aaa2ceaafc1a0229ca4538106819fd3a5509dd383e8fe4b731c6870339556a5c06feb9cf330bb'  # noqa: E501
-    from_account = acct.recoverTransaction(raw_tx_hex)
+    from_account = acct.recover_transaction(raw_tx_hex)
     assert from_account == '0xFeC2079e80465cc8C687fFF9EE6386ca447aFec4'
 
 
 def test_eth_account_recover_transaction_with_literal(acct):
     raw_tx = 0xf8640d843b9aca00830e57e0945b2063246f2191f18f2675cedb8b28102e957458018025a00c753084e5a8290219324c1a3a86d4064ded2d15979b1ea790734aaa2ceaafc1a0229ca4538106819fd3a5509dd383e8fe4b731c6870339556a5c06feb9cf330bb  # noqa: E501
-    from_account = acct.recoverTransaction(raw_tx)
+    from_account = acct.recover_transaction(raw_tx)
     assert from_account == '0xFeC2079e80465cc8C687fFF9EE6386ca447aFec4'
 
 
@@ -168,9 +279,9 @@ def test_eth_account_recover_message(acct):
         '0xe6ca9bba58c88611fad66a6ce8f996908195593807c4b38bd528d2cff09d4eb3',
         '0x3e5bfbbf4d3e39b1a2fd816a7680c19ebebaf3a141b239934ad43cb33fcec8ce',
     )
-    message = "I♥SF"
-    msghash = defunct_hash_message(text=message)
-    from_account = acct.recoverHash(msghash, vrs=(v, r, s))
+    message_text = "I♥SF"
+    message = encode_defunct(text=message_text)
+    from_account = acct.recover_message(message, vrs=(v, r, s))
     assert from_account == '0x5ce9454909639D2D17A3F753ce7d93fa0b9aB12E'
 
 
@@ -178,41 +289,35 @@ def test_eth_account_recover_message(acct):
     'signature_bytes',
     [
         # test signature bytes with standard v (0 in this case)
-        b'\x0cu0\x84\xe5\xa8)\x02\x192L\x1a:\x86\xd4\x06M\xed-\x15\x97\x9b\x1e\xa7\x90sJ\xaa,\xea\xaf\xc1"\x9c\xa4S\x81\x06\x81\x9f\xd3\xa5P\x9d\xd3\x83\xe8\xfeKs\x1chp3\x95V\xa5\xc0o\xeb\x9c\xf30\xbb\x00',  # noqa: E501
+        b'\0Q[\xc8\xfd2&N!\xec\x08 \xe8\xc5\x12>\xd5\x8c\x11\x95\xc9\xea\x17\xcb\x01\x8b\x1a\xd4\x07<\xc5\xa6\0\x80\xf5\xdc\xec9zZ\x8cR0\x82\xbf\xa4\x17qV\x89\x03\xaaUN\xc0k\xa8G\\\xa9\x05\x0f\xb7\xd5\x00',  # noqa: E501
         # test signature bytes with chain-naive v (27 in this case)
-        b'\x0cu0\x84\xe5\xa8)\x02\x192L\x1a:\x86\xd4\x06M\xed-\x15\x97\x9b\x1e\xa7\x90sJ\xaa,\xea\xaf\xc1"\x9c\xa4S\x81\x06\x81\x9f\xd3\xa5P\x9d\xd3\x83\xe8\xfeKs\x1chp3\x95V\xa5\xc0o\xeb\x9c\xf30\xbb\x1b',  # noqa: E501
+        b'\0Q[\xc8\xfd2&N!\xec\x08 \xe8\xc5\x12>\xd5\x8c\x11\x95\xc9\xea\x17\xcb\x01\x8b\x1a\xd4\x07<\xc5\xa6\0\x80\xf5\xdc\xec9zZ\x8cR0\x82\xbf\xa4\x17qV\x89\x03\xaaUN\xc0k\xa8G\\\xa9\x05\x0f\xb7\xd5\x1b',  # noqa: E501
     ],
     ids=['test_sig_bytes_standard_v', 'test_sig_bytes_chain_naive_v']
 )
 def test_eth_account_recover_signature_bytes(acct, signature_bytes):
-    msg_hash = b'\xbb\r\x8a\xba\x9f\xf7\xa1<N,s{i\x81\x86r\x83{\xba\x9f\xe2\x1d\xaa\xdd\xb3\xd6\x01\xda\x00\xb7)\xa1'  # noqa: E501
-    from_account = acct.recoverHash(msg_hash, signature=signature_bytes)
-    assert from_account == '0xFeC2079e80465cc8C687fFF9EE6386ca447aFec4'
+    # found a signature with a leading 0 byte in both r and s
+    message = encode_defunct(text='10284')
+    from_account = acct.recover_message(message, signature=signature_bytes)
+    assert from_account == '0x2c7536E3605D9C16a7a3D7b1898e529396a65c23'
 
 
-def test_eth_account_recover_vrs(acct):
-    v, r, s = (
-        27,
-        5634810156301565519126305729385531885322755941350706789683031279718535704513,
-        15655399131600894366408541311673616702363115109327707006109616887384920764603,
+@pytest.mark.parametrize('raw_v', (0, 27))
+@pytest.mark.parametrize('as_hex', (False, True))
+def test_eth_account_recover_vrs(acct, raw_v, as_hex):
+    # found a signature with a leading 0 byte in both r and s
+    raw_r, raw_s = (
+        143748089818580655331728101695676826715814583506606354117109114714663470502,
+        227853308212209543997879651656855994238138056366857653269155208245074180053,
     )
-    msg_hash = b'\xbb\r\x8a\xba\x9f\xf7\xa1<N,s{i\x81\x86r\x83{\xba\x9f\xe2\x1d\xaa\xdd\xb3\xd6\x01\xda\x00\xb7)\xa1'  # noqa: E501
-    from_account = acct.recoverHash(msg_hash, vrs=(v, r, s))
-    assert from_account == '0xFeC2079e80465cc8C687fFF9EE6386ca447aFec4'
+    if as_hex:
+        vrs = map(to_hex, (raw_v, raw_r, raw_s))
+    else:
+        vrs = raw_v, raw_r, raw_s
 
-    from_account = acct.recoverHash(msg_hash, vrs=map(to_hex, (v, r, s)))
-    assert from_account == '0xFeC2079e80465cc8C687fFF9EE6386ca447aFec4'
-
-
-def test_eth_account_recover_vrs_standard_v(acct):
-    v, r, s = (
-        0,
-        5634810156301565519126305729385531885322755941350706789683031279718535704513,
-        15655399131600894366408541311673616702363115109327707006109616887384920764603,
-    )
-    msg_hash = b'\xbb\r\x8a\xba\x9f\xf7\xa1<N,s{i\x81\x86r\x83{\xba\x9f\xe2\x1d\xaa\xdd\xb3\xd6\x01\xda\x00\xb7)\xa1'  # noqa: E501
-    from_account = acct.recoverHash(msg_hash, vrs=(v, r, s))
-    assert from_account == '0xFeC2079e80465cc8C687fFF9EE6386ca447aFec4'
+    message = encode_defunct(text='10284')
+    from_account = acct.recover_message(message, vrs=vrs)
+    assert from_account == '0x2c7536E3605D9C16a7a3D7b1898e529396a65c23'
 
 
 @pytest.mark.parametrize(
@@ -256,6 +361,49 @@ def test_eth_account_hash_message_hexstr(acct, message, expected):
     assert defunct_hash_message(hexstr=message) == expected
 
 
+@given(st.text())
+def test_sign_message_against_sign_hash_as_text(keyed_acct, message_text):
+    # sign via hash
+    msg_hash = defunct_hash_message(text=message_text)
+    with pytest.deprecated_call():
+        signed_via_hash = keyed_acct.signHash(msg_hash)
+
+    # sign via message
+    signable_message = encode_defunct(text=message_text)
+    signed_via_message = keyed_acct.sign_message(signable_message)
+    assert signed_via_hash == signed_via_message
+
+
+@given(st.binary())
+def test_sign_message_against_sign_hash_as_bytes(keyed_acct, message_bytes):
+    # sign via hash
+    msg_hash = defunct_hash_message(message_bytes)
+    with pytest.deprecated_call():
+        signed_via_hash = keyed_acct.signHash(msg_hash)
+
+    # sign via message
+    signable_message = encode_defunct(message_bytes)
+    signed_via_message = keyed_acct.sign_message(signable_message)
+
+    assert signed_via_hash == signed_via_message
+
+
+@given(st.binary())
+def test_sign_message_against_sign_hash_as_hex(keyed_acct, message_bytes):
+    message_hex = to_hex(message_bytes)
+
+    # sign via hash
+    msg_hash_hex = defunct_hash_message(hexstr=message_hex)
+    with pytest.deprecated_call():
+        signed_via_hash_hex = keyed_acct.signHash(msg_hash_hex)
+
+    # sign via message
+    signable_message_hex = encode_defunct(hexstr=message_hex)
+    signed_via_message_hex = keyed_acct.sign_message(signable_message_hex)
+
+    assert signed_via_hash_hex == signed_via_message_hex
+
+
 @pytest.mark.parametrize(
     'message, key, expected_bytes, expected_hash, v, r, s, signature',
     (
@@ -294,18 +442,57 @@ def test_eth_account_hash_message_hexstr(acct, message, expected):
     ids=['web3js_hex_str_example', 'web3js_eth_keys.datatypes.PrivateKey_example', '31byte_r_and_s'],  # noqa: E501
 )
 def test_eth_account_sign(acct, message, key, expected_bytes, expected_hash, v, r, s, signature):
-    msghash = defunct_hash_message(text=message)
-    assert msghash == expected_hash
-    signed = acct.signHash(msghash, private_key=key)
-    assert signed.messageHash == expected_hash
-    assert signed.v == v
-    assert signed.r == r
-    assert signed.s == s
-    assert signed.signature == signature
+    signable = encode_defunct(text=message)
+    signed = acct.sign_message(signable, private_key=key)
+    assert signed.messageHash == signed['messageHash'] == expected_hash
+    assert signed.v == signed['v'] == v
+    assert signed.r == signed['r'] == r
+    assert signed.s == signed['s'] == s
+    assert signed.signature == signed['signature'] == signature
 
-    account = acct.privateKeyToAccount(key)
-    msghash = defunct_hash_message(text=message)
-    assert account.signHash(msghash) == signed
+    account = acct.from_key(key)
+    assert account.sign_message(signable) == signed
+
+
+def test_eth_valid_account_address_sign_data_with_intended_validator(acct, message_encodings):
+    account = acct.create()
+    signable = encode_intended_validator(
+        account.address,
+        **message_encodings,
+    )
+    signed = account.sign_message(signable)
+    signed_classmethod = acct.sign_message(signable, account.key)
+    assert signed == signed_classmethod
+    new_addr = acct.recover_message(signable, signature=signed.signature)
+    assert new_addr == account.address
+
+
+def test_eth_short_account_address_sign_data_with_intended_validator(acct, message_encodings):
+    account = acct.create()
+
+    address_in_bytes = to_bytes(hexstr=account.address)
+    # Test for all lengths of addresses < 20 bytes
+    for i in range(1, 21):
+        with pytest.raises(TypeError):
+            # Raise TypeError if the address is less than 20 bytes
+            defunct_hash_message(
+                **message_encodings,
+                signature_version=b'\x00',
+                version_specific_data=to_hex(address_in_bytes[:-i]),
+            )
+
+
+def test_eth_long_account_address_sign_data_with_intended_validator(acct, message_encodings):
+    account = acct.create()
+
+    address_in_bytes = to_bytes(hexstr=account.address)
+    with pytest.raises(TypeError):
+        # Raise TypeError if the address is more than 20 bytes
+        defunct_hash_message(
+            **message_encodings,
+            signature_version=b'\x00',
+            version_specific_data=to_hex(address_in_bytes + b'\x00'),
+        )
 
 
 @pytest.mark.parametrize(
@@ -359,19 +546,45 @@ def test_eth_account_sign(acct, message, key, expected_bytes, expected_hash, v, 
             232940010090391255679819602567388136081614408698362277324138554019997613600,
             38,
         ),
+        (
+            {
+                "gas": "0x186a0",
+                "gasPrice": "0x3b9aca00",
+                "data": "0x616263646566",
+                "nonce": "0x22",
+                "to": "0x09616C3d61b3331fc4109a9E41a8BDB7d9776609",
+                "value": "0x5af3107a4000",
+                "type": "0x1",
+                "accessList": [
+                    {
+                        "address": "0x0000000000000000000000000000000000000001",
+                        "storageKeys": [
+                            "0x0100000000000000000000000000000000000000000000000000000000000000"
+                        ],
+                    },
+                ],
+                "chainId": "0x76c",
+            },
+            "0xfad9c8855b740a0b7ed4c221dbad0f33a83a49cad6b3fe8d5817ac83d38b6a19",
+            HexBytes("0x01f8ad82076c22843b9aca00830186a09409616c3d61b3331fc4109a9e41a8bdb7d9776609865af3107a400086616263646566f838f7940000000000000000000000000000000000000001e1a0010000000000000000000000000000000000000000000000000000000000000001a08289e85fa00f8f7f78a53cf147a87b2a7f0d27e64d7571f9d06a802e365c3430a017dc77eae36c88937db4a5179f57edc6119701652f3f1c6f194d1210d638a061"),  # noqa: E501
+            HexBytes("0x2a791d5483705e444fa6d493e6f504836cf54ca78335c60dc81bcf320e95e49c"),
+            59044332146903025833144089863119240337233261477961028574753111682592582415408,
+            10792729512059697976635619515571917958852106732672247829612911298843986403425,
+            1,
+        ),
     ),
-    ids=['web3js_hex_str_example', 'web3js_eth_keys.datatypes.PrivateKey_example', '31byte_r_and_s'],  # noqa: E501
+    ids=['web3js_hex_str_example', 'web3js_eth_keys.datatypes.PrivateKey_example', '31byte_r_and_s', 'access_list_tx'],  # noqa: E501
 )
 def test_eth_account_sign_transaction(acct, txn, private_key, expected_raw_tx, tx_hash, r, s, v):
-    signed = acct.signTransaction(txn, private_key)
-    assert signed.r == r
-    assert signed.s == s
-    assert signed.v == v
-    assert signed.rawTransaction == expected_raw_tx
-    assert signed.hash == tx_hash
+    signed = acct.sign_transaction(txn, private_key)
+    assert signed.r == signed['r'] == r
+    assert signed.s == signed['s'] == s
+    assert signed.v == signed['v'] == v
+    assert signed.rawTransaction == signed['rawTransaction'] == expected_raw_tx
+    assert signed.hash == signed['hash'] == tx_hash
 
-    account = acct.privateKeyToAccount(private_key)
-    assert account.signTransaction(txn) == signed
+    account = acct.from_key(private_key)
+    assert account.sign_transaction(txn) == signed
 
 
 @pytest.mark.parametrize(
@@ -389,12 +602,12 @@ def test_eth_account_sign_transaction_from_eth_test(acct, transaction):
     # generated from the transaction hash and private key, mostly due to code
     # author's ignorance. The example test fixtures and implementations seem to agree, so far.
     # See ecdsa_raw_sign() in /eth_keys/backends/native/ecdsa.py
-    signed = acct.signTransaction(unsigned_txn, key)
+    signed = acct.sign_transaction(unsigned_txn, key)
     assert signed.r == to_int(hexstr=expected_raw_txn[-130:-66])
 
     # confirm that signed transaction can be recovered to the sender
-    expected_sender = acct.privateKeyToAccount(key).address
-    assert acct.recoverTransaction(signed.rawTransaction) == expected_sender
+    expected_sender = acct.from_key(key).address
+    assert acct.recover_transaction(signed.rawTransaction) == expected_sender
 
 
 @pytest.mark.parametrize(
@@ -403,32 +616,114 @@ def test_eth_account_sign_transaction_from_eth_test(acct, transaction):
 )
 def test_eth_account_recover_transaction_from_eth_test(acct, transaction):
     raw_txn = transaction['signed']
-    key = transaction['key']
-    expected_sender = acct.privateKeyToAccount(key).address
-    assert acct.recoverTransaction(raw_txn) == expected_sender
+    expected_sender = acct.from_key(transaction['key']).address
+    assert acct.recover_transaction(raw_txn) == expected_sender
+
+
+def get_encrypt_test_params():
+    """
+    Params for testing Account#encrypt. Due to not being able to provide fixtures to
+    pytest.mark.parameterize, we opt for creating the params in a non-fixture method
+    here instead of providing fixtures for the private key and password.
+    """
+    key = '0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318'
+    key_bytes = to_bytes(hexstr=key)
+    private_key = keys.PrivateKey(HexBytes(key))
+    password = 'test!'
+
+    # 'private_key, password, kdf, iterations, expected_decrypted_key, expected_kdf'
+    return [
+        (
+            key,
+            password,
+            None,
+            None,
+            key_bytes,
+            'scrypt'
+        ),
+        (
+            private_key,
+            password,
+            None,
+            None,
+            private_key.to_bytes(),
+            'scrypt'
+        ),
+        (
+            key,
+            password,
+            'pbkdf2',
+            None,
+            key_bytes,
+            'pbkdf2'
+        ),
+        (
+            key,
+            password,
+            None,
+            1024,
+            key_bytes,
+            'scrypt'
+        ),
+        (
+            key,
+            password,
+            'pbkdf2',
+            1024,
+            key_bytes,
+            'pbkdf2'
+        ),
+        (
+            key,
+            password,
+            'scrypt',
+            1024,
+            key_bytes,
+            'scrypt'
+        ),
+    ]
 
 
 @pytest.mark.parametrize(
-    'private_key, password, expected_decrypted_key',
-    [
-        (
-            web3js_key(),
-            web3js_password(),
-            to_bytes(hexstr=web3js_key()),
-        ),
-        (
-            web3js_private_key(web3js_key()),
-            web3js_password(),
-            web3js_private_key(web3js_key()).to_bytes(),
-        ),
-    ],
-    ids=['hex_str', 'eth_keys.datatypes.PrivateKey']
+    'private_key, password, kdf, iterations, expected_decrypted_key, expected_kdf',
+    get_encrypt_test_params(),
+    ids=[
+        'hex_str',
+        'eth_keys.datatypes.PrivateKey',
+        'hex_str_provided_kdf',
+        'hex_str_default_kdf_provided_iterations',
+        'hex_str_pbkdf2_provided_iterations',
+        'hex_str_scrypt_provided_iterations',
+    ]
 )
-def test_eth_account_encrypt(acct, private_key, password, expected_decrypted_key):
-    encrypted = acct.encrypt(private_key, password)
+def test_eth_account_encrypt(
+        acct,
+        private_key,
+        password,
+        kdf,
+        iterations,
+        expected_decrypted_key,
+        expected_kdf):
+    if kdf is None:
+        encrypted = acct.encrypt(private_key, password, iterations=iterations)
+    else:
+        encrypted = acct.encrypt(private_key, password, kdf=kdf, iterations=iterations)
 
     assert encrypted['address'] == '2c7536e3605d9c16a7a3d7b1898e529396a65c23'
     assert encrypted['version'] == 3
+    assert encrypted['crypto']['kdf'] == expected_kdf
+
+    if iterations is None:
+        expected_iterations = get_default_work_factor_for_kdf(expected_kdf)
+    else:
+        expected_iterations = iterations
+
+    if expected_kdf == 'pbkdf2':
+        assert encrypted['crypto']['kdfparams']['c'] == expected_iterations
+    elif expected_kdf == 'scrypt':
+        assert encrypted['crypto']['kdfparams']['n'] == expected_iterations
+    else:
+        raise Exception("test must be upgraded to confirm iterations with kdf %s" % expected_kdf)
 
     decrypted_key = acct.decrypt(encrypted, password)
 
@@ -436,27 +731,47 @@ def test_eth_account_encrypt(acct, private_key, password, expected_decrypted_key
 
 
 @pytest.mark.parametrize(
-    'private_key, password, expected_decrypted_key',
-    [
-        (
-            web3js_key(),
-            web3js_password(),
-            HexBytes(to_bytes(hexstr=web3js_key())),
-        ),
-        (
-            web3js_private_key(web3js_key()),
-            web3js_password(),
-            web3js_private_key(web3js_key()).to_bytes(),
-        ),
-    ],
-    ids=['hex_str', 'eth_keys.datatypes.PrivateKey']
+    'private_key, password, kdf, iterations, expected_decrypted_key, expected_kdf',
+    get_encrypt_test_params(),
+    ids=[
+        'hex_str',
+        'eth_keys.datatypes.PrivateKey',
+        'hex_str_provided_kdf',
+        'hex_str_default_kdf_provided_iterations',
+        'hex_str_pbkdf2_provided_iterations',
+        'hex_str_scrypt_provided_iterations',
+    ]
 )
-def test_eth_account_prepared_encrypt(acct, private_key, password, expected_decrypted_key):
-    account = acct.privateKeyToAccount(private_key)
-    encrypted = account.encrypt(password)
+def test_eth_account_prepared_encrypt(
+        acct,
+        private_key,
+        password,
+        kdf,
+        iterations,
+        expected_decrypted_key,
+        expected_kdf):
+    account = acct.from_key(private_key)
+
+    if kdf is None:
+        encrypted = account.encrypt(password, iterations=iterations)
+    else:
+        encrypted = account.encrypt(password, kdf=kdf, iterations=iterations)
 
     assert encrypted['address'] == '2c7536e3605d9c16a7a3d7b1898e529396a65c23'
     assert encrypted['version'] == 3
+    assert encrypted['crypto']['kdf'] == expected_kdf
+
+    if iterations is None:
+        expected_iterations = get_default_work_factor_for_kdf(expected_kdf)
+    else:
+        expected_iterations = iterations
+
+    if expected_kdf == 'pbkdf2':
+        assert encrypted['crypto']['kdfparams']['c'] == expected_iterations
+    elif expected_kdf == 'scrypt':
+        assert encrypted['crypto']['kdfparams']['n'] == expected_iterations
+    else:
+        raise Exception("test must be upgraded to confirm iterations with kdf %s" % expected_kdf)
 
     decrypted_key = acct.decrypt(encrypted, password)
 

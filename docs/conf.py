@@ -54,7 +54,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'eth-account'
-copyright = '2018, Jason Carver, Piper Merriam'
+copyright = '2020, The Ethereum Foundation'
 
 __version__ = setup_version
 # The version info for the project you're documenting, acts as replacement for
@@ -82,6 +82,7 @@ exclude_patterns = [
     '_build',
     'modules.rst',
     'eth_account.internal.rst',
+    'eth_account.hdaccount.rst',
 ]
 
 # The reST default role (used for this markup: `text`) to use for all
@@ -211,7 +212,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
   ('index', 'eth_account.tex', 'eth-account Documentation',
-   'Jason Carver', 'manual'),
+   'The Ethereum Foundation', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -241,7 +242,7 @@ latex_documents = [
 # (source start file, name, description, authors, manual section).
 man_pages = [
     ('index', 'eth_account', 'eth-account Documentation',
-     ['Jason Carver'], 1)
+     ['The Ethereum Foundation'], 1)
 ]
 
 # If true, show URL addresses after external links.
@@ -255,7 +256,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
   ('index', 'eth-account', 'eth-account Documentation',
-   'Jason Carver', 'eth-account', 'Sign Ethereum transactions and messages with local private keys',
+   'The Ethereum Foundation', 'eth-account', 'Sign Ethereum transactions and messages with local private keys',
    'Miscellaneous'),
 ]
 
@@ -274,7 +275,7 @@ texinfo_documents = [
 # -- Intersphinx configuration ------------------------------------------------
 
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3.5', None),
+    'python': ('https://docs.python.org/3.6', None),
     'web3': ('http://web3py.readthedocs.io/en/latest/', None),
     'hexbytes': ('http://hexbytes.readthedocs.io/en/latest/', None),
 }

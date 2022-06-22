@@ -8,20 +8,15 @@ common: &common
     - checkout
     - run:
         name: merge pull request base
-        command: |
-          if [[ -n "${CIRCLE_PR_NUMBER}" ]]; then
-            PR_INFO_URL=https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/pulls/$CIRCLE_PR_NUMBER
-
-            PR_BASE_BRANCH=$(curl -L "$PR_INFO_URL" | python -c 'import json, sys; obj = json.load(sys.stdin); sys.stdout.write(obj["base"]["ref"])')
-            git fetch origin +"$PR_BASE_BRANCH":circleci/pr-base
-
-            # We need these config values or git complains when creating the
-            # merge commit
-            git config --global user.name "Circle CI"
-            git config --global user.email "circleci@example.com"
-
-            git merge --no-edit circleci/pr-base
-          fi
+        command: ./.circleci/merge_pr.sh
+    - run:
+        name: merge pull request base (2nd try)
+        command: ./.circleci/merge_pr.sh
+        when: on_fail
+    - run:
+        name: merge pull request base (3nd try)
+        command: ./.circleci/merge_pr.sh
+        when: on_fail
     - restore_cache:
         keys:
           - cache-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}-{{ checksum "tox.ini" }}
@@ -33,70 +28,174 @@ common: &common
         command: ~/.local/bin/tox -r
     - save_cache:
         paths:
+          - .hypothesis
           - .tox
           - ~/.cache/pip
           - ~/.local
           - ./eggs
         key: cache-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}-{{ checksum "tox.ini" }}
 
+integration: &integration
+  working_directory: ~/repo
+  steps:
+    - checkout
+    - run:
+        name: merge pull request base
+        command: ./.circleci/merge_pr.sh
+    - run:
+        name: merge pull request base (2nd try)
+        command: ./.circleci/merge_pr.sh
+        when: on_fail
+    - run:
+        name: merge pull request base (3rd try)
+        command: ./.circleci/merge_pr.sh
+        when: on_fail
+    - restore_cache:
+        keys:
+          - cache-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}-{{ checksum "tox.ini" }}
+    - run:
+        name: install dependencies (python)
+        command: pip install --user tox
+    - run:
+        name: install dependencies (node)
+        command: sudo -E bash tests/integration/ethers-cli/setup_node_v12.sh && sudo apt-get install -y nodejs
+    - run:
+        name: Build ethers-cli
+        command: cd tests/integration/ethers-cli && sudo npm install -g . && cd ../../../
+    - run:
+        name: run tox
+        command: ~/.local/bin/tox -r
+    - save_cache:
+        paths:
+          - .hypothesis
+          - .tox
+          - ~/.cache/pip
+          - ~/.local
+          - ./eggs
+          - tests/integration/ethers-cli/node_modules
+        key: cache-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}-{{ checksum "tox.ini" }}
+
 jobs:
-  doctest:
+  docs:
     <<: *common
     docker:
-      - image: circleci/python:3.5
+      - image: circleci/python:3.8
         environment:
-          TOXENV: doctest
-  lint:
+          TOXENV: docs
+  py37-lint:
     <<: *common
     docker:
-      - image: circleci/python:3.5
+      - image: circleci/python:3.7
         environment:
-          TOXENV: lint
-  py35-core-rlp0:
+          TOXENV: py37-lint
+  py37-core:
     <<: *common
     docker:
-      - image: circleci/python:3.5
+      - image: circleci/python:3.7
         environment:
-          TOXENV: py35-core-rlp0
-  py36-core-rlp0:
+          TOXENV: py37-core
+  py38-lint:
     <<: *common
     docker:
-      - image: circleci/python:3.6
+      - image: circleci/python:3.8
         environment:
-          TOXENV: py36-core-rlp0
-  pypy3-core-rlp0:
+          TOXENV: py38-lint
+  py38-core:
     <<: *common
     docker:
-      - image: pypy
+      - image: circleci/python:3.8
         environment:
-          TOXENV: pypy3-core-rlp0
-  py35-core-rlp1:
+          TOXENV: py38-core
+  py39-lint:
     <<: *common
     docker:
-      - image: circleci/python:3.5
+      - image: circleci/python:3.9
         environment:
-          TOXENV: py35-core-rlp1
-  py36-core-rlp1:
+          TOXENV: py39-lint
+  py39-core:
     <<: *common
     docker:
-      - image: circleci/python:3.6
+      - image: circleci/python:3.9
         environment:
-          TOXENV: py36-core-rlp1
-  pypy3-core-rlp1:
+          TOXENV: py39-core
+  py310-lint:
     <<: *common
     docker:
-      - image: pypy
+      - image: circleci/python:3.10
         environment:
-          TOXENV: pypy3-core-rlp1
+          TOXENV: py310-lint
+  py310-core:
+    <<: *common
+    docker:
+      - image: circleci/python:3.10
+        environment:
+          TOXENV: py310-core
+  py37-integration:
+    <<: *integration
+    docker:
+      - image: circleci/python:3.7
+        environment:
+          TOXENV: py37-integration
+  py38-integration:
+    <<: *integration
+    docker:
+      - image: circleci/python:3.8
+        environment:
+          TOXENV: py38-integration
+  py39-integration:
+    <<: *integration
+    docker:
+      - image: circleci/python:3.9
+        environment:
+          TOXENV: py39-integration
+  py310-integration:
+    <<: *integration
+    docker:
+      - image: circleci/python:3.10
+        environment:
+          TOXENV: py310-integration
+  py37-wheel-cli:
+    <<: *common
+    docker:
+      - image: circleci/python:3.7
+        environment:
+          TOXENV: py37-wheel-cli
+  py38-wheel-cli:
+    <<: *common
+    docker:
+      - image: circleci/python:3.8
+        environment:
+          TOXENV: py38-wheel-cli
+  py39-wheel-cli:
+    <<: *common
+    docker:
+      - image: circleci/python:3.9
+        environment:
+          TOXENV: py39-wheel-cli
+  py310-wheel-cli:
+    <<: *common
+    docker:
+      - image: circleci/python:3.10
+        environment:
+          TOXENV: py310-wheel-cli
 workflows:
   version: 2
   test:
     jobs:
-      - doctest
-      - lint
-      - py35-core-rlp0
-      - py36-core-rlp0
-      - pypy3-core-rlp0
-      - py35-core-rlp1
-      - py36-core-rlp1
-      - pypy3-core-rlp1
+      - docs
+      - py37-lint
+      - py38-lint
+      - py39-lint
+      - py310-lint
+      - py37-core
+      - py38-core
+      - py39-core
+      - py310-core
+      - py37-integration
+      - py38-integration
+      - py39-integration
+      - py310-integration
+      - py37-wheel-cli
+      - py38-wheel-cli
+      - py39-wheel-cli
+      - py310-wheel-cli
